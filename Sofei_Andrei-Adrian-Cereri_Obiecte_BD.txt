@@ -1,0 +1,138 @@
+--11.
+--1.Să se afișeze, pentru soldații staționați în regiunea Europa de Vest și care au litera 'o' în nume sau în prenume, id-ul soldatului, numele, prenumele, 
+--data primului salariu(ultima zi din luna în care s-a înrolat),câte zile a fost activ în forțele armate până la terminarea războiului(diferența dintre ziua sfârșitului războiului 02.09.1945 și data înrolării)
+--și dacă este ofițer(maior,capitan,locotenent),subofiter(prim sergent, sergent) sau soldat (caporal, soldat prima clasa, soldat).
+--Să se ordoneze crescător valorile după lungimea numelui și în caz de egalitate după lungimea prenumelui.
+
+select s.cod_soldat,s.nume,s.prenume,
+last_day(s.data_inrolare) as primul_salariu,
+to_date('02-09-1945','dd-mm-yyyy')-s.data_inrolare as zile_la_activ,
+decode(rng.nume_rang, 'maior','ofiter','capitan','ofiter','locotenent','ofiter',
+'prim sergent','subofiter','sergent','subofiter','soldat') as rang
+from soldat s,
+pluton p,
+oras o,
+tara t,
+regiune r,
+rang rng
+where s.cod_pluton = p.cod_pluton
+and p.cod_oras = o.cod_oras
+and o.cod_tara = t.cod_tara
+and t.cod_regiune = r.cod_regiune
+and r.nume_regiune = 'Europa de Vest'
+and s.cod_rang = rng.cod_rang
+and (instr(s.nume, 'o')!=0 or instr(s.prenume,'o')!=0)
+order by length(nume), length(prenume);
+--25 de rezultate
+
+
+--2.Să se afișeze numele, prenumele,arma, tipul de armă(armă automată (cod arma=2,3,7,8,9,10), armă semi-automată(cod arma=1,4,5) sau pușcă cu repetiție(cod arma=6) și salariul,
+--pentru soldații care au ca superior direct un soldat staționat într-o regiune în care inamicul principal este Italia și care au salariul mai mic decât media salariilor rangurilor.
+
+select s.cod_soldat,s.nume, s.prenume,
+a.nume_model,
+case
+when a.cod_arma=2 or a.cod_arma=3 or a.cod_arma=7 or a.cod_arma=8 or a.cod_arma=9 or a.cod_arma=10 then 'arma automata'
+when a.cod_arma=1 or a.cod_arma=4 or a.cod_arma=5 then 'arma semi-automata'
+else 'pusca cu repetitie'
+end as tip_arma
+from soldat s,
+echipament e,
+arma a,
+rang rng
+where s.cod_superior_direct in(select s2.cod_soldat
+                               from soldat s2,
+                               pluton p,
+                               oras o,
+                               tara t,
+                               regiune r
+                               where s2.cod_pluton=p.cod_pluton
+                               and p.cod_oras=o.cod_oras
+                               and o.cod_tara=t.cod_tara
+                               and t.cod_regiune=r.cod_regiune
+                               and r.inamic_principal='Italia')
+and s.cod_rang = rng.cod_rang
+and s.cod_echipament = e.cod_echipament
+and e.cod_arma = a.cod_arma
+and rng.salariu < (select avg(salariu)
+                   from rang);
+--28 de rezultate
+
+
+--3.Să se afișeze codul si numărul de subordonați direcți ai soldaților care au cel puțin 2 subordonați direcți.
+--Să se ordoneze valorile descrescător după numărul de subordonați direcți și în caz de egalitate crescător după codul soldatului.
+select s1.cod_superior_direct as soldat,
+count(s1.cod_soldat) as numar_subordonati_directi
+from soldat s1
+group by s1.cod_superior_direct
+having count(s1.cod_soldat)>2
+order by 2 desc, 1;
+--14 rezultate
+
+
+--4.Să se afișeze codul, numele, prenumele, codul superiorului direct(dacă nu au se va pune valoarea 0),
+--numărul plutonului și salariul pentru soldații care au un salariu mai mare decât media salariilor soldaților din plutonul lor.
+--Să se ordoneze crescător după codul plutonului.
+select s.cod_soldat, s.nume,s.prenume,
+NVL(s.cod_superior_direct,0) as cod_superior_direct, 
+p.cod_pluton, rng.salariu
+from soldat s,
+pluton p,
+rang rng
+where s.cod_pluton=p.cod_pluton
+and s.cod_rang=rng.cod_rang
+and rng.salariu > (select avg(rng2.salariu)
+                   from soldat s2,
+                   rang rng2
+                   where s2.cod_pluton=s.cod_pluton
+                   and s2.cod_rang=rng2.cod_rang)
+order by 5;
+--24 de rezultate
+
+--5.Să se afișeze numele, prenumele și codul plutonului pentru soldații care au ca și armă M1 Garand și fac parte din plutonul cu codul 1.
+with temp(nume_soldat_cu_garand, prenume_soldat_cu_garand, cod_pluton_soldat_cu_garand) as
+(select st.nume,st.prenume,st.cod_pluton
+ from soldat st,
+ echipament et,
+ arma at
+ where st.cod_echipament=et.cod_echipament and et.cod_arma=at.cod_arma and at.nume_model='M1 Garand')
+select *
+from temp
+where cod_pluton_soldat_cu_garand=1;
+--9 rezultate
+
+--12.
+--1.Treceți orașele din Singapore, Indonezia și Belgia ca fiind într-o zonă fără conflict.
+Update Oras
+set zona_de_conflict='Nu'
+where nume_oras in (select o.nume_oras
+                     from oras o,
+                     tara t
+                     where o.cod_tara = t.cod_tara
+                     and (t.nume_tara='Singapore'
+                     or t.nume_tara='Indonezia' 
+                     or t.nume_tara='Belgia'));
+
+
+--2.S-a decis mărirea salariilor ofițerilor(soldați cu codul de rang >=6) cu 20% datorită serviciilor excepționale. Efectuați această actualizare.
+Update Rang
+set salariu=salariu*1.2
+where cod_rang in (select cod_rang
+                   from rang
+                   where nume_rang='maior' or nume_rang='capitan' or nume_rang='locotenent');
+
+--3.Stergeți toți soldații care au rangul de 'soldat prima clasa'.
+Delete from Soldat
+where cod_soldat in (select s.cod_soldat
+                     from soldat s,
+                     rang rng
+                     where s.cod_rang=rng.cod_rang
+                     and rng.nume_rang='soldat prima clasa');
+
+
+--13.
+create sequence incrementare_cod_soldat
+  increment by 1
+  start with 1
+  nocycle
+  nocache;
